@@ -1,0 +1,49 @@
+{
+    "criteria": [
+        {
+            "name": "Focus",
+            "description": "Does the reel convey a clear road safety message aligned with the theme?",
+            "max_marks": 5
+        },
+        {
+            "name": "Creativity and Originality",
+            "description": "Is the idea innovative and presented creatively?",
+            "max_marks": 5
+        },
+        {
+            "name": "Impact",
+            "description": "How engaging and effective is the reel in delivering its message?",
+            "max_marks": 5
+        },
+        {
+            "name": "Visual Appeal",
+            "description": "Is the reel visually compelling and professional in presentation?",
+            "max_marks": 5
+        },
+        {
+            "name": "Adherence to Theme",
+            "description": "Does the reel reflect the \"Be a Road Safety Hero\" theme?",
+            "max_marks": 5
+        },
+        {
+            "name": "Clarity",
+            "description": "Is the audio clear, and does the narrative support the visuals?",
+            "max_marks": 5
+        },
+        {
+            "name": "Ethical Standards",
+            "description": "Does the reel comply with ethical and legal standards?",
+            "max_marks": 5
+        },
+        {
+            "name": "Relevance",
+            "description": "Does the reel connect well with its target audience?",
+            "max_marks": 5
+        },
+        {
+            "name": "Other Remarks",
+            "description": "Any Other Remark by Judges",
+            "max_marks": 10
+        }
+    ]
+}

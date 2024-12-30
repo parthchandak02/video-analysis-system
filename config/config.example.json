@@ -1,0 +1,12 @@
+{
+    "gemini_api_key": "your_api_key_here",
+    "model_version": "gemini-2.0-flash-exp",
+    "rate_limits": {
+        "requests_per_minute": 60,
+        "max_tokens_per_request": 2048
+    },
+    "frame_extraction": {
+        "interval_seconds": 4,
+        "max_frames": null
+    }
+}
