@@ -57,3 +57,6 @@ logs/
 # OS specific
 .DS_Store
 Thumbs.db
+
+# Real input lists stay local
+sample_videos.csv
