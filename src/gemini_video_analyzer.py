@@ -4,7 +4,8 @@ import time
 from pathlib import Path
 from typing import List, Dict, Optional
 from enum import Enum
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 from PIL import Image
 import cv2
 import numpy as np
@@ -33,14 +34,11 @@ class GeminiVideoAnalyzer:
         # Load configuration
         self.config = ConfigLoader()
         
-        # Initialize Gemini
-        genai.configure(api_key=api_key)
-        
-        # Use model version from config
-        model_version = self.config.settings.get('model_version', 'gemini-2.0-flash-exp')
-        self.logger.info(f"Using Gemini model version: {model_version}")
-        self.model = genai.GenerativeModel(model_version)  # For both image and text analysis
-        self.text_model = self.model  # Use same model for consistency
+        # Gemini client is created on the first API call, so steps that make no
+        # requests (download, frames) work without a key
+        self._client = None
+        self.model_name = self.config.model_version
+        self.logger.info(f"Using Gemini model version: {self.model_name}")
         
         self.base_dir = Path(__file__).parent.parent
         
@@ -61,11 +59,27 @@ class GeminiVideoAnalyzer:
         # Rate limiting settings from config
         rate_limits = self.config.settings.get('rate_limits', {})
         self.requests_per_minute = rate_limits.get('requests_per_minute', 15)
-        self.max_tokens = rate_limits.get('max_tokens_per_request', 2048)
+        self.max_tokens = rate_limits.get('max_tokens_per_request')
         self.last_request_time = 0
         self.request_count = 0
         self.reset_time = time.time()
         
+    @property
+    def client(self) -> genai.Client:
+        """Gemini client, created on first use."""
+        if self._client is None:
+            if not self.api_key:
+                raise ValueError(
+                    "No Gemini API key. Set gemini_api_key in config/config.json or the GEMINI_API_KEY environment variable."
+                )
+            self._client = genai.Client(api_key=self.api_key)
+        return self._client
+
+    def _generate(self, contents) -> types.GenerateContentResponse:
+        """Send one generate_content request with the configured model and output cap."""
+        config = types.GenerateContentConfig(max_output_tokens=self.max_tokens) if self.max_tokens else None
+        return self.client.models.generate_content(model=self.model_name, contents=contents, config=config)
+
     def _wait_for_rate_limit(self):
         """Implement rate limiting to stay within free tier limits."""
         current_time = time.time()
@@ -116,9 +130,9 @@ class GeminiVideoAnalyzer:
                     prompt = "Describe what's happening in this image, focusing on key elements and actions."
                 
                 self._wait_for_rate_limit()
-                self.logger.debug(f"Sending request to Gemini for frame analysis with model version: {self.model.model_name}")
+                self.logger.debug(f"Sending request to Gemini for frame analysis with model version: {self.model_name}")
                 try:
-                    response = self.model.generate_content([prompt, image])
+                    response = self._generate([prompt, image])
                     self.logger.debug(f"Received response from Gemini: {response}")
                     
                     if response.text:
@@ -134,7 +148,8 @@ class GeminiVideoAnalyzer:
                     self.logger.error(f"Gemini API error: {str(api_error)}")
                     # Fallback to a simpler prompt
                     self.logger.info("Retrying with simpler prompt...")
-                    response = self.model.generate_content(["Describe this image briefly.", image])
+                    self._wait_for_rate_limit()
+                    response = self._generate(["Describe this image briefly.", image])
                     if response.text:
                         return response.text
                     else:
@@ -173,7 +188,7 @@ class GeminiVideoAnalyzer:
             
             self._wait_for_rate_limit()
             self.logger.debug("Sending request to Gemini for text analysis")
-            response = self.text_model.generate_content(prompt)
+            response = self._generate(prompt)
             self.logger.debug("Received response from Gemini")
             
             return response.text
@@ -227,7 +242,7 @@ class GeminiVideoAnalyzer:
             
             self._wait_for_rate_limit()
             self.logger.debug("Sending request to Gemini for video description")
-            description_response = self.text_model.generate_content(description_prompt)
+            description_response = self._generate(description_prompt)
             if not description_response.text:
                 raise ValueError("Empty response from Gemini for video description")
             self.analysis["video_description"] = description_response.text
@@ -254,7 +269,7 @@ class GeminiVideoAnalyzer:
             
             self._wait_for_rate_limit()
             self.logger.debug("Sending request to Gemini for overall analysis")
-            analysis_response = self.text_model.generate_content(analysis_prompt)
+            analysis_response = self._generate(analysis_prompt)
             if not analysis_response.text:
                 raise ValueError("Empty response from Gemini for overall analysis")
             self.analysis["overall_analysis"] = analysis_response.text
@@ -327,7 +342,7 @@ class GeminiVideoAnalyzer:
             
             self._wait_for_rate_limit()
             self.logger.debug("Sending request to Gemini for scoring")
-            response = self.text_model.generate_content(scoring_prompt)
+            response = self._generate(scoring_prompt)
             self.logger.debug("Received response from Gemini")
             
             try:
@@ -414,7 +429,7 @@ class GeminiVideoAnalyzer:
 
             self._wait_for_rate_limit()
             self.logger.debug("Sending request to Gemini for comparative analysis")
-            comparison_response = self.text_model.generate_content(comparison_prompt)
+            comparison_response = self._generate(comparison_prompt)
             
             # Create score comparison table
             score_table = {
@@ -529,12 +544,11 @@ class GeminiVideoAnalyzer:
             self.logger.error(f"Full error details: {repr(e)}")
             raise
 
-    def generate_comparative_analysis(self):
-        """Generate comparative analysis for all processed videos."""
+    def generate_comparative_analysis(self, csv_path: Path):
+        """Generate comparative analysis for all processed videos listed in csv_path."""
         self.logger.info("Starting comparative analysis")
         
-        # Get all score files in original order from CSV
-        csv_path = self.base_dir / 'all_videos.csv'
+        # Get all score files in original order from the CSV passed on the command line
         video_order = pd.read_csv(csv_path)['Video Name'].tolist()
         
         # Get all score files

@@ -1,5 +1,9 @@
 import json
+import os
 from pathlib import Path
+
+DEFAULT_MODEL = 'gemini-3.8-flash'
+
 
 class ConfigLoader:
     def __init__(self):
@@ -29,13 +33,26 @@ class ConfigLoader:
 
     @property
     def gemini_api_key(self):
-        """Get Gemini API key"""
-        return self.settings.get('gemini_api_key')
+        """Gemini API key: GEMINI_API_KEY env var, else config (the example placeholder counts as unset)."""
+        key = os.getenv('GEMINI_API_KEY') or self.settings.get('gemini_api_key')
+        if not key or key == 'your_api_key_here':
+            return None
+        return key
+
+    @property
+    def model_version(self):
+        """Gemini model id"""
+        return self.settings.get('model_version') or DEFAULT_MODEL
 
     @property
     def frame_interval(self):
-        """Get frame extraction interval"""
-        return self.settings.get('frame_extraction_interval', 4)
+        """Seconds between extracted frames (frame_extraction.interval_seconds)"""
+        return self.settings.get('frame_extraction', {}).get('interval_seconds') or 4
+
+    @property
+    def max_frames(self):
+        """Maximum frames to extract per video, or None for no limit (frame_extraction.max_frames)"""
+        return self.settings.get('frame_extraction', {}).get('max_frames')
 
     @property
     def video_extensions(self):

@@ -48,7 +48,7 @@ are written for road-safety content; the rubric itself lives in a JSON file.
 **1 · Download and sample**
 
 Reads a CSV of names and Google Drive links, downloads each video with `gdown`, and saves one
-frame every 4 seconds with OpenCV.
+frame every 4 seconds (configurable) with OpenCV.
 
 </td>
 <td width="33%" valign="top">
@@ -86,13 +86,9 @@ by score. This step makes no API calls.
 
 ## Known gaps
 
-This was a one-off from December 2024 and has not been updated since.
+A one-off from December 2024, updated in 2026 to the `google-genai` SDK and a current model.
 
-- `google-generativeai` is now deprecated in favour of `google-genai`, and the configured model, `gemini-2.0-flash-exp`, was an experimental release. Expect to change both.
 - Captions are not implemented; each video gets a "Captions not available" placeholder.
-- The frame interval is fixed at 4 seconds in code; the `frame_extraction` config block is not read.
-- Downloads call `venv/bin/gdown`, so the virtual environment must be named `venv` in the repo root.
-- The comparison step reads `all_videos.csv` from the repo root, not the CSV passed on the command line.
 - Only Google Drive links are supported.
 
 ## Run it
@@ -104,7 +100,7 @@ git clone https://github.com/parthchandak02/video-analysis-system.git
 cd video-analysis-system
 python -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
-cp config/config.example.json config/config.json   # then add your key
+cp config/config.example.json config/config.json   # then add your key, or export GEMINI_API_KEY
 ```
 
 ```bash
@@ -121,9 +117,12 @@ The CSV has two columns, `Video Name` and `Video URL`; see `data/00_input/exampl
 
 | Key in `config/config.json` | |
 |---|---|
-| `gemini_api_key` | Your key |
-| `model_version` | Gemini model name |
+| `gemini_api_key` | Your key (the `GEMINI_API_KEY` environment variable wins if set) |
+| `model_version` | Gemini model id (default `gemini-3.8-flash`) |
 | `rate_limits.requests_per_minute` | Request cap per minute |
+| `rate_limits.max_tokens_per_request` | Output token cap per request |
+| `frame_extraction.interval_seconds` | Seconds between sampled frames (default 4) |
+| `frame_extraction.max_frames` | Stop after this many frames per video (`null` for no limit) |
 
 The rubric is `config/scoring_criteria.json`: a list of `name`, `description` and `max_marks`.
 The comparison tables expect the nine criterion names it ships with.

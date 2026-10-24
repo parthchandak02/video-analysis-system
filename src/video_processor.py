@@ -1,5 +1,7 @@
 import os
 import json
+import shutil
+import sys
 import cv2
 import pandas as pd
 from pathlib import Path
@@ -42,7 +44,7 @@ class VideoProcessor:
             dir_path.mkdir(parents=True, exist_ok=True)
             
         # Initialize Gemini analyzer
-        self.analyzer = GeminiVideoAnalyzer(self.config.settings['gemini_api_key'])
+        self.analyzer = GeminiVideoAnalyzer(self.config.gemini_api_key)
         self.criteria_file = self.base_dir / 'config' / 'scoring_criteria.json'
 
     def get_video_id(self, url):
@@ -57,7 +59,9 @@ class VideoProcessor:
     def download_video(self, url, filename):
         """Download video from Google Drive."""
         # Extract file ID from Google Drive URL
-        file_id = url.split('/')[-2]
+        file_id = self.get_video_id(url)
+        if not file_id:
+            raise ValueError(f"Not a Google Drive file link: {url}")
         video_path = self.dirs['videos'] / f"{filename}.mp4"
         
         if video_path.exists():
@@ -65,8 +69,9 @@ class VideoProcessor:
             return str(video_path)
         
         self.logger.info(f"Downloading video: {filename}")
-        gdown_path = str(Path(__file__).parent.parent / "venv" / "bin" / "gdown")
-        subprocess.run([gdown_path, "--output", str(video_path), f"https://drive.google.com/uc?id={file_id}"], check=True)
+        # gdown from whichever environment is running this script
+        gdown_cmd = [shutil.which("gdown")] if shutil.which("gdown") else [sys.executable, "-m", "gdown"]
+        subprocess.run([*gdown_cmd, "--output", str(video_path), f"https://drive.google.com/uc?id={file_id}"], check=True)
         self.logger.info(f"Download complete: {filename}")
         
         return str(video_path)
@@ -81,9 +86,10 @@ class VideoProcessor:
             raise ValueError(f"Could not open video: {video_path}")
             
         # Get video properties
-        fps = int(cap.get(cv2.CAP_PROP_FPS))
-        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        duration = total_frames / fps
+        fps = cap.get(cv2.CAP_PROP_FPS) or 0
+        if fps <= 0:
+            cap.release()
+            raise ValueError(f"Could not read frame rate of video: {video_path}")
         self.logger.debug(f"Video FPS: {fps}")
         
         # Create directory for frames
@@ -92,15 +98,19 @@ class VideoProcessor:
         
         frame_count = 0
         saved_count = 0
-        interval = 4  # Extract a frame every 4 seconds
+        interval = self.config.frame_interval  # seconds, from frame_extraction.interval_seconds
+        max_frames = self.config.max_frames
+        step = max(1, round(fps * interval))
         
         while cap.isOpened():
+            if max_frames is not None and saved_count >= max_frames:
+                break
             ret, frame = cap.read()
             if not ret:
                 break
                 
             # Extract frame every 'interval' seconds
-            if frame_count % (fps * interval) == 0:
+            if frame_count % step == 0:
                 frame_path = frames_dir / f"frame_{saved_count:03d}.jpg"
                 cv2.imwrite(str(frame_path), frame)
                 saved_count += 1
@@ -148,11 +158,12 @@ class VideoProcessor:
                 self.logger.info(f"\nProcessing batch {batch_num} ({i+1}-{end_idx} of {total_videos})")
                 
                 batch_df = df.iloc[i:end_idx]
-                for _, row in batch_df.iterrows():
+                for idx, row in batch_df.iterrows():
                     video_name = row['Video Name']
                     video_url = row['Video URL']
                     
-                    self.logger.info(f"\nProcessing video {i+1}/{total_videos}: {video_name}")
+                    self.logger.info(f"\nProcessing video {idx + 1}/{total_videos}: {video_name}")
+                    video_path = self.dirs['videos'] / f"{video_name}.mp4"
                     try:
                         if mode in ['all', 'download']:
                             video_path = self.download_video(video_url, video_name)
@@ -184,7 +195,7 @@ class VideoProcessor:
             self.logger.info("\nGenerating final comparative analysis...")
             try:
                 time.sleep(60)  # Wait 60 seconds
-                self.analyzer.generate_comparative_analysis()
+                self.analyzer.generate_comparative_analysis(Path(csv_file))
                 self.logger.info("Comparative analysis complete!")
             except Exception as e:
                 self.logger.error(f"Error generating comparative analysis: {str(e)}")
@@ -243,7 +254,7 @@ def main():
         processor.clean_data(args.clean)
     if args.mode == 'compare':
         # Only run comparative analysis
-        processor.analyzer.generate_comparative_analysis()
+        processor.analyzer.generate_comparative_analysis(Path(args.csv_file))
     else:
         processor.process_videos_from_csv(args.csv_file, args.mode)
 
